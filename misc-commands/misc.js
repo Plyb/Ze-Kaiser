@@ -1,6 +1,5 @@
 const axios = require('axios').default;
 const { exec } = require('child_process');
-const querystring = require('querystring');
 const fs = require("fs");
 const tmp = require('tmp-promise');
 const base = require('../base-commands/base');
@@ -59,9 +58,11 @@ const autoReact = (context) => {
 
 const smite = (context) => {
 	let receivedMessage = context.message;
-	const config = getConfig(context.message.guild.id, context.nosql)
+	const config = getConfig(context.message.guild.id, context.nosql);
 	if (!receivedMessage.mentions.users.first()) {
-		meme(receivedMessage, 'illegal');
+		context.primaryCommand = 'illegal';
+		context.args = [];
+		meme(context);
 		return;
 	}
 
@@ -303,105 +304,6 @@ const stopListening = (context) => {
 	}
 }
 
-const getXkcdComicInfo = async (num, context) => {
-  if (num !== "") {
-		num = parseInt(num)
-	}
-	const response = await axios.get(`https://xkcd.com/${num}/info.0.json`);
-	if (response.status !== 200) {
-		// send error
-		base.sendError(context, `Failed to get comic #${num}\n${response.status}: ${response.statusText}`)
-		return;
-	}
-	return response.data;
-}
-
-const xkcd = async (context) => {
-	let receivedMessage = context.message;
-	let args = context.args;
-	const requestedComic = (args[0] || "").trim();
-	let num;
-	receivedMessage.delete();
-	if (!requestedComic) {
-		// latest. It works
-		num = "";
-	}
-	else if (/^\d+$/.test(requestedComic)  && args.length === 1) {
-		num = parseInt(requestedComic);
-    if (num === 404) {
-			receivedMessage.channel.send("Error 404: comic not found");
-			return;
-		}
-	} else if (requestedComic === "random"  && args.length === 1) {
-		const latest = await getXkcdComicInfo("", context);
-		num = Math.floor(Math.random() * (latest.num + 1));
-	} else {
-		return xkcdsearch(context);
-	}
-	const comic = await getXkcdComicInfo(num, context);
-
-	const comicEmbed = new Discord.MessageEmbed()
-		.setColor('#1A73E8')
-		.setTitle(`xkcd #${num}: ${comic.title}`)
-		.setDescription(`Posted on ${comic.month}/${comic.day}/${comic.year}`)
-		.setImage(comic.img)
-		.setURL(`https://xkcd.com/${num}`)
-		.setFooter(comic.alt);
-	receivedMessage.channel.send(comicEmbed);
-}
-
-const xkcdsearch = async (context) => {
-	let receivedMessage = context.message;
-	let args = context.args;
-	const terms = args.join("+");
-	if (!terms) {
-		receivedMessage.channel.send(`You forgot a search term.`);
-		return;
-	}
-	const url = "https://www.explainxkcd.com/wiki/index.php?" + querystring.stringify({
-		search: `${terms}+-incategory:"All Comics"`,
-		title: "Special:Search",
-	});
-	const response = await axios.get(url);
-	if (response.status !== 200) {
-		// send error
-		base.sendError(context, `Failed to search explainxkcd.com for ${terms} #${num}\n${response.status}: ${response.statusText}`)
-		return;
-	}
-	if (/There were no results matching the query/.test(response.data)) {
-		receivedMessage.channel.send("No results");
-		return;
-	}
-	let selector;
-	if (/mw-search-results/.test(response.data)) {
-		// direct comic page
-		selector = "mw-search-results";
-	} else {
-		// search results page
-		selector = `<h1 id="firstHeading" class="firstHeading" lang="en">`;
-	}
-	const htmlToSearch = (response.data.split(selector) || [])[1];
-	if (!htmlToSearch) {
-		receivedMessage.channel.send("No (usable) results");
-		return;
-	}
-	let num = (htmlToSearch.match(/\d+(?=:)/) || [])[0];
-	if (!num) {
-		receivedMessage.channel.send("No (usable) results");
-		return;
-	}
-	num = parseInt(num);
-	const comic = await getXkcdComicInfo(num);
-	const comicEmbed = new Discord.MessageEmbed()
-		.setColor('#1A73E8')
-		.setTitle(`xkcd #${num}: ${comic.title}`)
-		.setDescription(`Posted on ${comic.month}/${comic.day}/${comic.year}`)
-		.setImage(comic.img)
-		.setURL(`https://xkcd.com/${num}`)
-		.setFooter(comic.alt);
-	receivedMessage.channel.send(comicEmbed);
-}
-
 const speak = async (context) => {
 	const config = getConfig(context.message.guild.id, context.nosql);
 	if (!config.administrators.includes(context.message.author.id)) {
@@ -409,7 +311,7 @@ const speak = async (context) => {
 	}
 	let args = context.args;
 	let id = args.pop();
-	let destination = await client.channels.cache.get(id);
+	let destination = await client.channels.cache.get(id); // this needs to be limited to only where the admin has power
 	if (!destination) { // not a valid channel id, try user id
 		destination = await client.users.cache.get(id);
 		if (!destination) { // not a valid user id
@@ -433,7 +335,5 @@ module.exports = {
 	startListening,
 	stopListening,
 	ignoredChannels,
-	xkcd,
-	xkcdsearch,
 	speak
 };
